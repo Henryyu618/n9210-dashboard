@@ -125,16 +125,20 @@ tr:hover td { background: #f8faff; }
 
 <div class="card">
   <h2>分渠道数据</h2>
-  <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;">
+  <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
     <div>
       <button class="active" id="osBtnIOS" onclick="switchOS('ios')" style="padding:5px 14px;border:1px solid #ddd;border-radius:6px;background:#4a6cf7;color:#fff;cursor:pointer;font-size:13px;margin-right:6px;">iOS</button>
       <button id="osBtnAndroid" onclick="switchOS('android')" style="padding:5px 14px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;">Android</button>
     </div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:6px;">
-      <span style="font-size:13px;color:#666;">日期:</span>
-      <select id="channelDatePicker" onchange="renderAdChannelTable()" style="padding:4px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;"></select>
+      <select id="channelDatePicker" onchange="setChannelDateMode('single')" style="padding:4px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;"></select>
+      <span style="font-size:13px;color:#999;margin:0 4px;">或</span>
+      <input type="date" id="channelDateFrom" onchange="setChannelDateMode('range')" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;width:130px;">
+      <span style="font-size:12px;color:#666;">~</span>
+      <input type="date" id="channelDateTo" onchange="setChannelDateMode('range')" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;width:130px;">
     </div>
   </div>
+  <div id="channelPeriodLabel" style="font-size:12px;color:#888;margin-bottom:8px;"></div>
   <div style="overflow-x:auto;">
     <table>
       <thead>
@@ -1327,28 +1331,109 @@ function renderAdOverview() {
   document.getElementById('adOverviewCards').innerHTML = html;
 }
 
+let channelDateMode = 'single'; // 'single' or 'range'
+
+function setChannelDateMode(mode) {
+  channelDateMode = mode;
+  if (mode === 'single') {
+    document.getElementById('channelDateFrom').value = '';
+    document.getElementById('channelDateTo').value = '';
+  }
+  renderAdChannelTable();
+}
+
 function renderAdChannelTable() {
   const src = currentOS === 'ios' ? adsChannelIOS : adsChannelAndroid;
-  const selectedDate = document.getElementById('channelDatePicker').value;
-  if (!selectedDate || !src.length) {
-    document.getElementById('adChannelBody').innerHTML = '<tr><td colspan="10" style="color:#999;">暂无数据</td></tr>';
-    return;
+  let rows = [];
+  let periodText = '';
+
+  if (channelDateMode === 'range') {
+    const fromVal = document.getElementById('channelDateFrom').value;
+    const toVal = document.getElementById('channelDateTo').value;
+    if (!fromVal || !toVal) {
+      document.getElementById('adChannelBody').innerHTML = '<tr><td colspan="10" style="color:#999;">请选择起止日期</td></tr>';
+      document.getElementById('channelPeriodLabel').textContent = '';
+      return;
+    }
+    const fromMMDD = fromVal.slice(5).replace('-', '/');
+    const toMMDD = toVal.slice(5).replace('-', '/');
+    const filtered = src.filter(r => r[0] >= fromMMDD && r[0] <= toMMDD);
+    periodText = `${fromMMDD} ~ ${toMMDD} 汇总`;
+    rows = aggregateByChannel(filtered);
+  } else {
+    const selectedDate = document.getElementById('channelDatePicker').value;
+    if (!selectedDate || !src.length) {
+      document.getElementById('adChannelBody').innerHTML = '<tr><td colspan="10" style="color:#999;">暂无数据</td></tr>';
+      document.getElementById('channelPeriodLabel').textContent = '';
+      return;
+    }
+    periodText = selectedDate;
+    rows = src.filter(r => r[0] === selectedDate).map(r => ({
+      channel: r[1],
+      spend: parseFloat(String(r[2]).replace(/,/g, '')) || 0,
+      newAcct: parseFloat(String(r[3]).replace(/,/g, '')) || 0,
+      newCost: r[4],
+      convAcct: parseFloat(String(r[5]).replace(/,/g, '')) || 0,
+      convCost: r[6],
+      roi1: r[7],
+      roi3: r[8],
+      ret2: r[9],
+      ret3: r[10]
+    }));
   }
-  let rows = src.filter(r => r[0] === selectedDate);
-  rows.sort((a, b) => {
-    const spendA = parseFloat(String(a[2]).replace(/,/g, '')) || 0;
-    const spendB = parseFloat(String(b[2]).replace(/,/g, '')) || 0;
-    return spendB - spendA;
-  });
+
+  document.getElementById('channelPeriodLabel').textContent = periodText;
+
+  rows.sort((a, b) => b.spend - a.spend);
+
   if (!rows.length) {
-    document.getElementById('adChannelBody').innerHTML = '<tr><td colspan="10" style="color:#999;">该日期无数据</td></tr>';
+    document.getElementById('adChannelBody').innerHTML = '<tr><td colspan="10" style="color:#999;">该时段无数据</td></tr>';
     return;
   }
   let html = '';
   rows.forEach(r => {
-    html += `<tr><td>${r[1]}</td><td>${r[2] || '--'}</td><td>${r[3] || '--'}</td><td>${r[4] || '--'}</td><td>${r[5] || '--'}</td><td>${r[6] || '--'}</td><td>${r[7] || '--'}</td><td>${r[8] || '--'}</td><td>${r[9] || '--'}</td><td>${r[10] || '--'}</td></tr>`;
+    const spend = r.spend > 0 ? fmtNum(r.spend, 0) : '--';
+    const newAcct = r.newAcct > 0 ? fmtNum(r.newAcct, 0) : '--';
+    const newCost = r.newAcct > 0 && r.spend > 0 ? '$' + (r.spend / r.newAcct).toFixed(2) : (r.newCost || '--');
+    const convAcct = r.convAcct > 0 ? fmtNum(r.convAcct, 0) : '--';
+    const convCost = r.convAcct > 0 && r.spend > 0 ? '$' + (r.spend / r.convAcct).toFixed(2) : (r.convCost || '--');
+    const roi1 = r.roi1 || '--';
+    const roi3 = r.roi3 || '--';
+    const ret2 = r.ret2 || '--';
+    const ret3 = r.ret3 || '--';
+    html += `<tr><td>${r.channel}</td><td>${spend}</td><td>${newAcct}</td><td>${newCost}</td><td>${convAcct}</td><td>${convCost}</td><td>${roi1}</td><td>${roi3}</td><td>${ret2}</td><td>${ret3}</td></tr>`;
   });
   document.getElementById('adChannelBody').innerHTML = html;
+}
+
+function aggregateByChannel(filtered) {
+  const map = {};
+  filtered.forEach(r => {
+    const ch = r[1];
+    if (!map[ch]) map[ch] = { channel: ch, spend: 0, newAcct: 0, convAcct: 0, roi1Vals: [], roi3Vals: [], ret2Vals: [], ret3Vals: [] };
+    const spend = parseFloat(String(r[2]).replace(/,/g, '')) || 0;
+    const newA = parseFloat(String(r[3]).replace(/,/g, '')) || 0;
+    const convA = parseFloat(String(r[5]).replace(/,/g, '')) || 0;
+    map[ch].spend += spend;
+    map[ch].newAcct += newA;
+    map[ch].convAcct += convA;
+    if (r[7] && r[7] !== '--') map[ch].roi1Vals.push(parseFloat(r[7]));
+    if (r[8] && r[8] !== '--') map[ch].roi3Vals.push(parseFloat(r[8]));
+    if (r[9] && r[9] !== '--') map[ch].ret2Vals.push(parseFloat(r[9]));
+    if (r[10] && r[10] !== '--') map[ch].ret3Vals.push(parseFloat(r[10]));
+  });
+  return Object.values(map).map(m => ({
+    channel: m.channel,
+    spend: m.spend,
+    newAcct: m.newAcct,
+    newCost: null,
+    convAcct: m.convAcct,
+    convCost: null,
+    roi1: m.roi1Vals.length ? (m.roi1Vals.reduce((a,b)=>a+b,0)/m.roi1Vals.length).toFixed(2) + '%' : '--',
+    roi3: m.roi3Vals.length ? (m.roi3Vals.reduce((a,b)=>a+b,0)/m.roi3Vals.length).toFixed(2) + '%' : '--',
+    ret2: m.ret2Vals.length ? (m.ret2Vals.reduce((a,b)=>a+b,0)/m.ret2Vals.length).toFixed(1) + '%' : '--',
+    ret3: m.ret3Vals.length ? (m.ret3Vals.reduce((a,b)=>a+b,0)/m.ret3Vals.length).toFixed(1) + '%' : '--',
+  }));
 }
 
 let adCharts = {};
