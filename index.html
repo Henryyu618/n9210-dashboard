@@ -1215,8 +1215,8 @@ function switchTab(tab) {
   document.getElementById('section-ads').style.display = tab === 'ads' ? '' : 'none';
   document.getElementById('tabOps').className = 'tab' + (tab === 'ops' ? ' active' : '');
   document.getElementById('tabAds').className = 'tab' + (tab === 'ads' ? ' active' : '');
-  document.getElementById('rangeBarOps').style.display = tab === 'ops' ? '' : 'none';
-  document.getElementById('rangeBarAds').style.display = tab === 'ads' ? '' : 'none';
+  document.getElementById('rangeBarOps').style.display = tab === 'ops' ? 'flex' : 'none';
+  document.getElementById('rangeBarAds').style.display = tab === 'ads' ? 'flex' : 'none';
   if (tab === 'ads') renderAdTab();
 }
 
@@ -1287,18 +1287,37 @@ function renderAdOverview() {
     document.getElementById('adOverviewCards').innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#999;padding:20px;">暂无广告数据</div>';
     return;
   }
-  const latest = data[data.length - 1];
+  function sumCol(idx) {
+    let t = 0;
+    data.forEach(r => { const v = parseFloat(String(r[idx]).replace(/,/g, '')); if (!isNaN(v)) t += v; });
+    return t;
+  }
+  function avgPctCol(idx) {
+    let vals = [];
+    data.forEach(r => { const s = String(r[idx]); const v = parseFloat(s.replace(/%.*/, '')); if (!isNaN(v) && s !== '--') vals.push(v); });
+    return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) + '%' : '--';
+  }
+  const totalSpend = sumCol(1);
+  const totalNew = sumCol(2);
+  const totalReflow = sumCol(4);
+  const totalConv = sumCol(6);
+  const newCost = totalNew > 0 ? (totalSpend / totalNew).toFixed(2) : '--';
+  const convCost = totalConv > 0 ? (totalSpend / totalConv).toFixed(2) : '--';
+  const roi1 = avgPctCol(8);
+  const ret2 = avgPctCol(10);
+  const ret3 = avgPctCol(11);
+  const periodLabel = data.length > 1 ? `(${data[0][0]}~${data[data.length-1][0]}, ${data.length}天)` : `(${data[0][0]})`;
   const cards = [
-    { label: '广告花费', value: '$' + fmtNum(latest[1], 0), color: '#4a6cf7' },
-    { label: '新增账号', value: fmtNum(latest[2], 0), color: '#26a69a' },
-    { label: '新增成本', value: '$' + fmtNum(latest[3], 2), color: '#ff7043' },
-    { label: '转化账号', value: fmtNum(latest[6], 0), color: '#ab47bc' },
-    { label: '转化成本', value: '$' + fmtNum(latest[7], 2), color: '#42a5f5' },
-    { label: '转化ROI1', value: latest[8] || '--', color: '#66bb6a' },
-    { label: '转化次留', value: latest[10] || '--', color: '#ffa726' },
-    { label: '转化3留', value: latest[11] || '--', color: '#ef5350' },
+    { label: '总花费', value: '$' + fmtNum(totalSpend, 0), color: '#4a6cf7' },
+    { label: '总新增账号', value: fmtNum(totalNew, 0), color: '#26a69a' },
+    { label: '平均新增成本', value: newCost !== '--' ? '$' + newCost : '--', color: '#ff7043' },
+    { label: '总转化账号', value: fmtNum(totalConv, 0), color: '#ab47bc' },
+    { label: '平均转化成本', value: convCost !== '--' ? '$' + convCost : '--', color: '#42a5f5' },
+    { label: '平均ROI1', value: roi1, color: '#66bb6a' },
+    { label: '平均转化次留', value: ret2, color: '#ffa726' },
+    { label: '平均转化3留', value: ret3, color: '#ef5350' },
   ];
-  let html = '';
+  let html = `<div style="grid-column:1/-1;font-size:12px;color:#888;margin-bottom:-4px;">${periodLabel}</div>`;
   cards.forEach(c => {
     html += `<div style="background:#f8f9fc;border-radius:8px;padding:16px;text-align:center;border-left:3px solid ${c.color}">
       <div style="font-size:12px;color:#888;margin-bottom:6px;">${c.label}</div>
